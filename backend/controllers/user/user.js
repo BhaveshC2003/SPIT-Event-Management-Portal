@@ -2,6 +2,7 @@ const User = require("../../models/user")
 //const bookTicket = require("../../thread")
 const generateJWT = require("../../utils/generateJWT")
 const {Worker} = require("worker_threads")
+const sendEmail = require("../../utils/sendEmail")
 
 exports.register = async(req,res,next)=>{
     try{
@@ -64,36 +65,36 @@ exports.loadUser = async(req,res,next)=>{
 }
 
 //Ticket booking using threads --response time = 13000ms
-exports.bookTickets = async(req,res,next)=>{
-    const {username} = req.body.user
-    const event = req.body.event
-    console.log(`Server clock value before request : ${global.clock.getTimestamp()}`)
-    console.log(`Client(${username}) clock value : ${req.body.clock}`)
-    global.clock.receiveMessage(req.body.clock)
-    const worker = new Worker("./thread.js",{workerData:{username,event}})
-    worker.on("message",function(data){
-        console.log(data)
-        res.status(200).json({
-            success:true,
-            message:"Successfully booked tickets",
-            clock:global.clock.getTimestamp()
-        })
-    })
-}
-
-
-
-//Non-thread program  --response time = 23000ms
 // exports.bookTickets = async(req,res,next)=>{
-//     const {username,event} = req.body
-//     bookTicket({username,event})
-//     .then((data)=>{
+//     const {username,email} = req.body.user
+//     const event = req.body.event
+//     console.log(`Server clock value before request : ${global.clock.getTimestamp()}`)
+//     console.log(`Client(${username}) clock value : ${req.body.clock}`)
+//     global.clock.receiveMessage(req.body.clock)
+//     const worker = new Worker("./thread.js",{workerData:{username,event}})
+//     worker.on("message",function(data){
 //         console.log(data)
-//         res.status(200).json({success:true})
-//     })
-//     .catch((err)=>{
-//         console.log(err)
-//         res.status(500).json({success:false})
+//         sendEmail({email,subject:"Hurray!! Tickets Booked",message:"Your ticket has been successfully booked."})
+//         res.status(200).json({
+//             success:true,
+//             message:"Successfully booked tickets",
+//             clock:global.clock.getTimestamp()
+//         })
 //     })
 // }
+
+exports.bookTickets = async (req,res)=>{
+    await global.bully.ipc.send({data:{user:req.body.user,event:req.body.event}},"book_tickets")
+    const interval = setInterval(async()=>{
+        const response = await global.bully.ipc.receive("book_tickets_success")
+        if(response){
+            await global.bully.ipc.send({user:{email:req.body.user.email,username:req.body.user.username}},"send_mail")
+            clearInterval(interval)
+            res.status(200).json({
+                success:true,
+                message:"Booked tickets successfully"
+            })
+        }
+    },3000)
+}
 
